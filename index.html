@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d14">
+<meta name="description" content="Pokémon Open World – ein Pixel-Abenteuer mit 3 XXL-Regionen, Starterwahl und wilden Pokémon. Läuft im Browser, auf Handy und Tablet.">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pokémon OW">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Pokémon – Open World (Pixel)</title>
+<style>
+  :root { --bg: #0b0d14; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; width: 100%;
+    background: var(--bg); overflow: hidden;
+    font-family: "Courier New", monospace;
+    overscroll-behavior: none; touch-action: none;
+    -webkit-user-select: none; user-select: none;
+  }
+  body {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  #game {
+    display: block; flex: 0 0 auto; image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges; image-rendering: crisp-edges;
+    background: #0b0d14; touch-action: none;
+  }
+
+  /* ---------- Desktop-Hinweiszeile ---------- */
+  #hint {
+    position: fixed; bottom: 4px; left: 0; right: 0; text-align: center;
+    color: #4a5270; font-size: 11px; letter-spacing: 1px; pointer-events: none;
+  }
+  body.touch #hint { display: none; }
+
+  /* ---------- Touch-Steuerung ---------- */
+  #touch { display: none; }
+  body.touch #touch {
+    display: flex; align-items: center; justify-content: space-between;
+    width: 100%; flex: 1 1 auto; gap: 10px;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    min-height: 0;
+  }
+  /* Hochkant: Tasten nach unten in die Daumenzone */
+  body.touch.portrait #touch { align-items: flex-end; padding-bottom: calc(58px + env(safe-area-inset-bottom)); }
+  /* Handy im Querformat: Steuerung links und rechts NEBEN dem Bild */
+  body.touch #touch.side {
+    position: fixed; inset: 0; height: 100%;
+    padding: 0 10px calc(4px + env(safe-area-inset-bottom));
+    align-items: center; pointer-events: none;
+  }
+  body.touch #touch.side #pad,
+  body.touch #touch.side #actions { pointer-events: auto; }
+  body.touch #touch.side #pad { width: min(15vw, 42vh, 138px); }
+  body.touch #touch.side .btn { width: min(8.5vw, 21vh, 62px); font-size: 11px; }
+  body.touch #touch.side #actions { gap: 8px 8px; }
+
+  #pad {
+    position: relative; flex: 0 0 auto;
+    width: min(38vw, 30vh, 190px); aspect-ratio: 1;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle at 50% 42%, #3b4468 0%, #262c46 62%, #1a1f33 100%);
+    border: 3px solid #4d5880;
+    box-shadow: inset 0 3px 10px rgba(255,255,255,.08), 0 4px 12px rgba(0,0,0,.5);
+    touch-action: none;
+  }
+  /* Richtungspfeile */
+  #pad::before {
+    content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: 50%;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cg fill='%23ffffff' fill-opacity='0.3'%3E%3Cpath d='M50 9 L59 25 L41 25 Z'/%3E%3Cpath d='M50 91 L41 75 L59 75 Z'/%3E%3Cpath d='M9 50 L25 41 L25 59 Z'/%3E%3Cpath d='M91 50 L75 59 L75 41 Z'/%3E%3C/g%3E%3C/svg%3E");
+    background-size: 100% 100%;
+  }
+  #stick {
+    position: absolute; left: 50%; top: 50%;
+    width: 42%; aspect-ratio: 1; border-radius: 50%;
+    transform: translate(-50%,-50%);
+    background: radial-gradient(circle at 40% 35%, #8fa0e0, #4a56a0 70%, #333c6e);
+    border: 2px solid #23294a;
+    box-shadow: 0 3px 8px rgba(0,0,0,.55);
+    transition: transform .05s linear;
+  }
+  #pad.d-up    { box-shadow: inset 0 8px 14px rgba(143,208,240,.35), 0 4px 12px rgba(0,0,0,.5); }
+  #pad.d-down  { box-shadow: inset 0 -8px 14px rgba(143,208,240,.35), 0 4px 12px rgba(0,0,0,.5); }
+  #pad.d-left  { box-shadow: inset 8px 0 14px rgba(143,208,240,.35), 0 4px 12px rgba(0,0,0,.5); }
+  #pad.d-right { box-shadow: inset -8px 0 14px rgba(143,208,240,.35), 0 4px 12px rgba(0,0,0,.5); }
+
+  #actions {
+    display: grid; grid-template-columns: repeat(2, auto); gap: 10px 12px;
+    align-items: center; justify-items: center;
+  }
+  .btn {
+    display: flex; align-items: center; justify-content: center;
+    width: min(19vw, 15vh, 86px); aspect-ratio: 1; border-radius: 50%;
+    font: bold 15px "Courier New", monospace; color: #fff; letter-spacing: 1px;
+    border: 3px solid rgba(0,0,0,.45);
+    box-shadow: 0 4px 0 rgba(0,0,0,.45), inset 0 3px 8px rgba(255,255,255,.22);
+    touch-action: none; cursor: pointer;
+  }
+  .btn.down { transform: translateY(3px); box-shadow: 0 1px 0 rgba(0,0,0,.45), inset 0 3px 8px rgba(0,0,0,.25); }
+  #btnA { background: linear-gradient(#63d66f, #2f9a45); }
+  #btnB { background: linear-gradient(#ec6a6a, #b32f2f); }
+  #btnRun { background: linear-gradient(#6aa8ec, #2f5fb3); font-size: 12px; }
+  #btnRun.on { background: linear-gradient(#f0d060, #c89a20); color: #2a2440; }
+  #btnMenu { background: linear-gradient(#8d8fa8, #55586f); font-size: 12px; }
+
+  /* Vollbild-Knopf: im freien Bereich der Steuerung, nie über dem Spielfeld */
+  #btnFull {
+    position: fixed; width: 38px; height: 38px; border-radius: 10px; z-index: 20;
+    background: rgba(26,22,38,.72); color: #cfd6f0; border: 1px solid #4a5270;
+    font-size: 16px; display: none; align-items: center; justify-content: center;
+    bottom: calc(10px + env(safe-area-inset-bottom));
+    left: 50%; transform: translateX(-50%);
+  }
+  body.touch #btnFull { display: flex; }
+  body.touch.sidemode #btnFull {
+    left: calc(10px + env(safe-area-inset-left)); transform: none;
+    bottom: calc(6px + env(safe-area-inset-bottom)); width: 32px; height: 32px; font-size: 14px;
+  }
+</style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="touch">
+    <div id="pad"><div id="stick"></div></div>
+    <div id="actions">
+      <div class="btn" id="btnRun">RUN</div>
+      <div class="btn" id="btnB">B</div>
+      <div class="btn" id="btnMenu">MENÜ</div>
+      <div class="btn" id="btnA">A</div>
+    </div>
+  </div>
+
+  <button id="btnFull" aria-label="Vollbild">⛶</button>
+
+  <div id="hint">WASD/Pfeile = Laufen &nbsp;·&nbsp; Shift = Rennen &nbsp;·&nbsp; Enter/Leertaste = OK &nbsp;·&nbsp; Esc = Menü</div>
+
+  <script src="src/sprites.js"></script>
+  <script src="src/data.js"></script>
+  <script src="src/world.js"></script>
+  <script src="src/battle.js"></script>
+  <script src="src/game.js"></script>
+  <script src="src/touch.js"></script>
+  <script>
+    if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+    }
+  </script>
+</body>
+</html>
