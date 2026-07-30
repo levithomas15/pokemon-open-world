@@ -60,6 +60,16 @@ Nach Änderungen an `src/` oder `index.html`:
 node tools/build.js
 ```
 
+## Eigene Domain einrichten (später jederzeit möglich)
+
+1. Datei `CNAME` im Repo-Hauptordner anlegen, Inhalt = die Domain, z. B. `pokemon-openworld.de`
+2. Beim Domain-Anbieter die DNS-Einträge setzen:
+   * **Unterdomain** (z. B. `spiel.meinedomain.de`): ein `CNAME`-Eintrag auf `levithomas15.github.io`
+   * **Hauptdomain** (z. B. `meinedomain.de`): vier `A`-Einträge auf
+     `185.199.108.153`, `185.199.109.153`, `185.199.110.153`, `185.199.111.153`
+3. Im Repo unter *Settings → Pages → Custom domain* die Domain eintragen und
+   „Enforce HTTPS" aktivieren (das Zertifikat braucht nach der DNS-Umstellung bis zu 24 h).
+
 ## Als App installieren
 
 Seite auf dem Handy öffnen → Browser-Menü → „Zum Startbildschirm hinzufügen".
