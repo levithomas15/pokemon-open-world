@@ -27,10 +27,14 @@ erkunden, wilde Pokémon fangen und trainieren. Läuft auf **Desktop, Handy und 
   1. **Grünwald-Weiten** – Wiesen, Wälder, Seen
   2. **Aschental-Kanyon** – heiße Schluchten und Gestrüpp
   3. **Kristall-Hochland** – Frost, Kristalle, die seltensten Pokémon
-* **Begegnungen:**
-  * im hohen Gras beim Laufen
-  * beim Passieren dicht bewachsener Büsche ("es raschelt ...")
-  * alle 30 Sekunden mit 1:40 ein Überfall aus dem Nichts
+* **Sichtbare Wild-Pokémon:** sie laufen frei in der Welt herum – über ihnen stehen
+  Art und Level, du entscheidest also selbst, gegen wen du kämpfst.
+  * **Berühren** startet den Kampf gegen genau dieses Pokémon
+  * **ruhige** wandern umher, **scheue** (und alle seltenen) fliehen vor dir,
+    **angriffslustige** bemerken dich („!") und laufen auf dich zu – mit Shift
+    rennst du schneller als sie und entkommst immer
+  * seltene Pokémon **funkeln** und haben ein goldenes bzw. lila Namensschild
+  * zusätzlich alle 30 Sekunden mit 1:40 ein Überfall aus dem Nichts
 * **Seltenheit steigt pro Region:** selten/ultra-selten ~4,6 % → ~14,5 % → ~29 %
   (z. B. Pikachu, Evoli, Nebulak, Ponita; ultra: Dratini, Lapras, Aerodactyl, Relaxo)
 * **Kampfsystem:** Typen-Effektivität, Statuswerte, AP, Gift/Paralyse, Volltreffer,

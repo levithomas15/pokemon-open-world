@@ -1888,7 +1888,8 @@
     encounterCooldown: 0,
     titleIdx: 0,
     notice: null, noticeT: 0,
-    inputLock: 0, stepsSinceBattle: 0
+    inputLock: 0, stepsSinceBattle: 0,
+    mons: [], monSpawnT: 0
   };
   window.G = G;
 
@@ -1984,11 +1985,14 @@
     G.x = r.spawn.x * TS + TS / 2;
     G.y = r.spawn.y * TS + TS / 2;
     G.respawn = { region: 0, x: r.spawn.x, y: r.spawn.y };
+    fillWildMons();
     G.state = 'world';
     showMsg([
       'Willkommen in der offenen Welt!',
       DATA.REGIONS[0].name + ' – ' + DATA.REGIONS[0].hint,
-      'Im hohen Gras lauern wilde Pokémon. Halte Abstand ... oder such sie!',
+      'Wilde Pokémon laufen sichtbar herum. Über ihnen stehen Art und Level.',
+      'Berühre eines, wenn du kämpfen willst – oder geh ihm einfach aus dem Weg!',
+      'Achtung: Manche sind angriffslustig und laufen auf dich zu. Mit Shift rennst du schneller als sie.',
       'Weiße Heilsteine heilen dein Team. Das lila Tor im Osten führt in die nächste Region.'
     ]);
     save();
@@ -2042,6 +2046,8 @@
       G.playtime = d.playtime || 0;
       region();
       G.x = d.x; G.y = d.y; G.dir = d.dir || 'down';
+      fillWildMons();
+      G.encounterCooldown = 1.5;
       G.state = 'world';
       return true;
     } catch (e) { return false; }
@@ -2070,9 +2076,10 @@
     return { key, lvl, tier };
   }
 
-  function startEncounter(kind) {
+  function startEncounter(kind, ent) {
     if (!G.party.some(m => m.hp > 0)) return;
-    const w = rollWild(kind);
+    // Bei einem sichtbaren Pokémon kämpft man genau gegen dieses
+    const w = ent ? { key: ent.key, lvl: ent.lvl, tier: ent.tier } : rollWild(kind);
     const enemy = BATTLE.makeMon(w.key, w.lvl);
     if (!G.dex[w.key]) G.dex[w.key] = 1;
     if (G.party[G.activeIdx].hp <= 0) {
@@ -2087,7 +2094,8 @@
     G.encounterCooldown = 1.2;
 
     if (kind === 'ambush') BATTLE.say(B, 'Aus dem Nichts springt dich ein wildes ' + enemy.name + ' an!');
-    else if (kind === 'bush') BATTLE.say(B, 'Etwas raschelt im Busch ... ein wildes ' + enemy.name + ' greift an!');
+    else if (kind === 'aggro') BATTLE.say(B, 'Das wilde ' + enemy.name + ' hat dich bemerkt und greift an!');
+    else if (kind === 'touch') BATTLE.say(B, 'Du gehst auf das wilde ' + enemy.name + ' zu!');
     else BATTLE.say(B, 'Ein wildes ' + enemy.name + ' erscheint!');
     if (w.tier === 1) BATTLE.say(B, 'Das sieht selten aus!');
     if (w.tier === 2) BATTLE.say(B, 'Unglaublich – das ist extrem selten!!');
@@ -2097,6 +2105,231 @@
     BATTLE.pump(B);
   }
 
+  /* ============================================================
+     Sichtbare Wild-Pokémon in der Overworld
+     Man sieht sie herumlaufen, erkennt Art und Level – und
+     entscheidet selbst, ob man hingeht. Ausnahme: angriffslustige
+     Pokémon laufen auf dich zu (vor ihnen kann man weglaufen).
+     ============================================================ */
+  const MON_MAX = 22;          // gleichzeitig in der Umgebung
+  const MON_SPAWN_MIN = 190;   // erscheinen knapp außerhalb des Bildes
+  const MON_SPAWN_MAX = 320;
+  const MON_DESPAWN = 560;
+  const MON_TOUCH = 10;        // Berührungsradius für den Kampfstart
+
+  function monTemper(w, seed) {
+    if (w.tier >= 1) return 'scheu';                 // Seltene sind vorsichtig
+    const r = tileHash(Math.round(seed * 977), Math.round(seed * 313));
+    return r < 0.42 ? 'aggro' : r < 0.86 ? 'ruhig' : 'scheu';
+  }
+
+  // nahDa = true erlaubt das Erscheinen im Sichtfeld (nur beim Befüllen
+  // einer frisch betretenen Region, damit die Welt sofort belebt ist)
+  function spawnWildMon(nahDa) {
+    const r = region();
+    const minD = nahDa ? 48 : MON_SPAWN_MIN;
+    let px = 0, py = 0, found = false;
+    for (let i = 0; i < 18 && !found; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const dist = minD + Math.random() * (MON_SPAWN_MAX - minD);
+      px = G.x + Math.cos(ang) * dist;
+      py = G.y + Math.sin(ang) * dist;
+      const tx = Math.floor(px / TS), ty = Math.floor(py / TS);
+      if (tx < 2 || ty < 2 || tx >= r.W - 2 || ty >= r.H - 2) continue;
+      const t = tileAt(tx, ty);
+      if (WORLD.SOLID[t] || t === T.SHRINE || t === T.GATE) continue;
+      // Die ersten Versuche nur im hohen Gras – dort leben die meisten
+      if (i < 10 && t !== T.BUSH) continue;
+      // mittig aufs Feld setzen, damit sie nicht in einer Ecke feststecken
+      px = tx * TS + TS / 2; py = ty * TS + TS / 2;
+      if (!monCanBe(px, py)) continue;
+      found = true;
+    }
+    if (!found) return false;
+
+    const w = rollWild('walk');
+    G.mons.push({
+      key: w.key, lvl: w.lvl, tier: w.tier,
+      x: px, y: py, vx: 0, vy: 0,
+      temper: monTemper(w, px * 0.13 + py * 0.07 + G.time),
+      state: 'idle', timer: Math.random() * 1.5,
+      bob: Math.random() * 6, alert: 0, life: 0, flip: Math.random() < .5
+    });
+    return true;
+  }
+
+  // Welt beim Betreten sofort bevölkern
+  function fillWildMons() {
+    G.mons = [];
+    for (let i = 0; i < MON_MAX * 2 && G.mons.length < MON_MAX - 4; i++) spawnWildMon(true);
+    G.monSpawnT = 0.3;
+  }
+
+  function monCanBe(nx, ny) {
+    const pts = [[nx - 3, ny - 1], [nx + 3, ny - 1], [nx - 3, ny + 4], [nx + 3, ny + 4]];
+    return pts.every(p => !solidAt(Math.floor(p[0] / TS), Math.floor(p[1] / TS)));
+  }
+
+  // Steckt ein Pokémon doch einmal fest, kommt es zurück auf die Feldmitte
+  function monUnstick(m) {
+    if (monCanBe(m.x, m.y)) return true;
+    const cx = Math.floor(m.x / TS) * TS + TS / 2;
+    const cy = Math.floor(m.y / TS) * TS + TS / 2;
+    if (monCanBe(cx, cy)) { m.x = cx; m.y = cy; return true; }
+    return false;
+  }
+
+  function updateWildMons(dt) {
+    // Nachschub, bis genug in der Nähe sind
+    G.monSpawnT -= dt;
+    if (G.monSpawnT <= 0) {
+      G.monSpawnT = G.mons.length < MON_MAX && !spawnWildMon(false) ? 0.06 : 0.28;
+    }
+
+    for (let i = G.mons.length - 1; i >= 0; i--) {
+      const m = G.mons[i];
+      m.life += dt;
+      m.bob += dt * 4;
+      m.alert = Math.max(0, m.alert - dt);
+
+      const dx = G.x - m.x, dy = G.y - m.y;
+      const dist = Math.hypot(dx, dy);
+
+      if (dist > MON_DESPAWN || (m.state === 'flucht' && m.timer <= 0 && dist > 200)) {
+        G.mons.splice(i, 1);
+        continue;
+      }
+      if (!monUnstick(m)) { G.mons.splice(i, 1); continue; }
+
+      // Verhalten
+      let speed = 0;
+      m.calm = Math.max(0, (m.calm || 0) - dt);
+      if (m.state === 'jagd') {
+        m.chaseT = (m.chaseT || 0) + dt;
+        if (m.chaseT > 6) { m.state = 'idle'; m.chaseT = 0; m.calm = 6; }  // gibt auf
+      } else m.chaseT = 0;
+
+      if (m.temper === 'aggro' && dist < 58 && G.encounterCooldown <= 0 && m.calm <= 0) {
+        if (m.state !== 'jagd') { m.state = 'jagd'; m.alert = 1.1; }
+        speed = 54;                     // langsamer als du – weglaufen klappt immer
+        m.vx = dx / dist; m.vy = dy / dist;
+      } else if (m.temper === 'scheu' && dist < 52) {
+        if (m.state !== 'flucht') { m.state = 'flucht'; m.timer = 2.5; }
+        speed = m.tier >= 1 ? 70 : 58;
+        m.vx = -dx / dist; m.vy = -dy / dist;
+        m.timer -= dt;
+      } else {
+        if (m.state === 'jagd' && dist > 96) m.state = 'idle';
+        if (m.state === 'flucht') { m.timer -= dt; if (m.timer <= 0) m.state = 'idle'; }
+        if (m.state !== 'flucht') {
+          m.timer -= dt;
+          if (m.timer <= 0) {
+            m.timer = 0.8 + Math.random() * 2.2;
+            if (Math.random() < 0.45) { m.vx = 0; m.vy = 0; }
+            else {
+              const a = Math.random() * Math.PI * 2;
+              m.vx = Math.cos(a); m.vy = Math.sin(a);
+            }
+          }
+          speed = 22;
+        } else {
+          speed = 58;
+        }
+      }
+
+      // Bewegung mit Ausweichen an Hindernissen
+      let mvx = m.vx, mvy = m.vy;
+      if (m.dodge > 0) { m.dodge -= dt; mvx = m.ddx; mvy = m.ddy; }
+      if (mvx || mvy) {
+        if (mvx) m.flip = mvx > 0;
+        const nx = m.x + mvx * speed * dt;
+        const ny = m.y + mvy * speed * dt;
+        const blockedX = !monCanBe(nx, m.y);
+        const blockedY = !monCanBe(m.x, ny);
+        if (!blockedX) m.x = nx;
+        if (!blockedY) m.y = ny;
+        if (blockedX || blockedY) {
+          if (m.state === 'jagd' || m.state === 'flucht') {
+            if (m.dodge <= 0) {           // seitlich am Hindernis vorbei
+              const s = Math.random() < .5 ? 1 : -1;
+              m.ddx = -mvy * s; m.ddy = mvx * s; m.dodge = 0.5;
+            }
+          } else {
+            if (blockedX) m.vx = -m.vx;
+            if (blockedY) m.vy = -m.vy;
+          }
+        }
+      }
+
+      // Berührung -> Kampf gegen genau dieses Pokémon
+      if (dist < MON_TOUCH && G.encounterCooldown <= 0 && !G.msg) {
+        const kind = m.state === 'jagd' ? 'aggro' : 'touch';
+        G.mons.splice(i, 1);
+        startEncounter(kind, m);
+        return;
+      }
+    }
+  }
+
+  function drawWildMon(m, camX, camY) {
+    const sp = DATA.SPECIES[m.key];
+    const sx = Math.round(m.x - 8 - camX);
+    const sy = Math.round(m.y - 11 - camY + Math.sin(m.bob) * 1.2);
+
+    b.fillStyle = 'rgba(0,0,0,.22)';
+    b.beginPath(); b.ellipse(sx + 8, sy + 15, 5, 2.5, 0, 0, 7); b.fill();
+    SPR.drawMon(b, sp.tmpl, sp.pal, sx, sy, 1, m.flip);
+
+    // Gras verdeckt die Füße
+    const tx = Math.floor(m.x / TS), ty = Math.floor(m.y / TS);
+    if (tileAt(tx, ty) === T.BUSH) {
+      const r = region(), set = r.tileset[T.BUSH];
+      const img = set[Math.floor(tileHash(tx, ty) * set.length) % set.length];
+      b.drawImage(img, 0, 8, 16, 8, tx * TS - camX, ty * TS - camY + 8, 16, 8);
+    }
+
+    // Seltene funkeln
+    if (m.tier >= 1) {
+      const col = m.tier === 2 ? '#c0a0ff' : '#ffe070';
+      for (let k = 0; k < 3; k++) {
+        const t = (G.time * 1.6 + k * 0.66 + m.bob * 0.05) % 1;
+        const a = 1 - Math.abs(t * 2 - 1);
+        if (a < .15) continue;
+        b.fillStyle = col;
+        const ax = sx + 2 + ((k * 7 + Math.floor(m.life * 3)) % 13);
+        const ay = sy - 2 + Math.sin(G.time * 2 + k) * 3;
+        b.globalAlpha = a;
+        b.fillRect(ax, ay, 1, 1);
+        b.fillRect(ax - 1, ay + 1, 3, 1);
+        b.fillRect(ax, ay + 2, 1, 1);
+        b.globalAlpha = 1;
+      }
+    }
+
+    // Ausrufezeichen, wenn es dich entdeckt hat
+    if (m.alert > 0) {
+      b.fillStyle = '#f8f4e8'; b.fillRect(sx + 6, sy - 11, 5, 9);
+      b.fillStyle = '#e04848';
+      b.fillRect(sx + 7, sy - 10, 3, 5);
+      b.fillRect(sx + 7, sy - 4, 3, 2);
+    }
+
+    // Namensschild, wenn man nah genug ist
+    const dist = Math.hypot(G.x - m.x, G.y - m.y);
+    if (dist < 86) {
+      const label = sp.name + ' Lv' + m.lvl;
+      const w = textW(label, 6) + 6;
+      const lx = Math.round(sx + 8 - w / 2), ly = sy - 10;
+      b.fillStyle = 'rgba(26,22,38,.8)';
+      b.fillRect(lx, ly, w, 9);
+      if (m.tier >= 1) {
+        b.fillStyle = m.tier === 2 ? '#c0a0ff' : '#ffe070';
+        b.fillRect(lx, ly, w, 1); b.fillRect(lx, ly + 8, w, 1);
+      }
+      text(label, lx + 3, ly + 2, m.tier === 2 ? '#e0d0ff' : m.tier === 1 ? '#ffe070' : '#f8f4e8', 6);
+    }
+  }
+
   function blackout() {
     G.party.forEach(m => { m.hp = m.maxhp; m.status = null; m.moves.forEach(mv => mv.ap = mv.apMax); });
     G.regionIdx = G.respawn.region;
@@ -2104,6 +2337,8 @@
     G.x = G.respawn.x * TS + TS / 2;
     G.y = G.respawn.y * TS + TS / 2;
     G.activeIdx = 0;
+    fillWildMons();
+    G.encounterCooldown = 2;
     showMsg(['Du hast keine kampffähigen Pokémon mehr ...',
       'Du wachst am letzten Heilstein auf. Dein Team wurde vollständig geheilt.']);
     save();
@@ -2155,6 +2390,10 @@
 
     G.encounterCooldown = Math.max(0, G.encounterCooldown - dt);
 
+    // Sichtbare Wild-Pokémon bewegen sich und reagieren auf dich
+    updateWildMons(dt);
+    if (G.state !== 'world') return;
+
     // Zufalls-Überfall: alle 30 Sekunden 1:40
     G.ambushT += dt;
     if (G.ambushT >= 30) {
@@ -2198,18 +2437,6 @@
       return;
     }
 
-    if (G.encounterCooldown > 0) return;
-
-    if (t === T.BUSH) {
-      if (Math.random() < 0.11) { startEncounter('grass'); return; }
-    } else {
-      // "zu nah am Busch": Nachbarfelder prüfen
-      let near = 0;
-      for (let y = -1; y <= 1; y++)
-        for (let x = -1; x <= 1; x++)
-          if (tileAt(tx + x, ty + y) === T.BUSH) near++;
-      if (near > 0 && Math.random() < 0.015 * near) { startEncounter('bush'); return; }
-    }
   }
 
   function travelTo(idx, fromSide) {
@@ -2224,6 +2451,7 @@
       G.y = gate.y * TS + TS / 2;
       G.respawn = { region: idx, x: gate.x, y: gate.y + 1 };
       G.encounterCooldown = 2;
+      fillWildMons();
       const cfg = DATA.REGIONS[idx];
       showMsg(['Region ' + cfg.num + ': ' + cfg.name,
         cfg.hint,
@@ -2268,18 +2496,29 @@
       drawItemIcon(sx + 4, sy + 4 + bob, it.item);
     }
 
-    // Spieler
-    const pxs = Math.round(G.x - 8 - camX), pys = Math.round(G.y - 12 - camY);
-    b.fillStyle = 'rgba(0,0,0,.22)';
-    b.beginPath(); b.ellipse(pxs + 8, pys + 15, 5, 2.5, 0, 0, 7); b.fill();
-    SPR.drawTrainer(b, pxs, pys, G.dir, G.moving ? G.step : 0, 1);
+    // Spieler und wilde Pokémon nach Tiefe (y) sortiert zeichnen
+    const drawList = [{ y: G.y, fn: drawPlayerSprite }];
+    for (const m of G.mons) {
+      const sx = m.x - camX, sy = m.y - camY;
+      if (sx < -40 || sy < -40 || sx > VW + 40 || sy > VH + 40) continue;
+      drawList.push({ y: m.y, fn: () => drawWildMon(m, camX, camY) });
+    }
+    drawList.sort((a, c) => a.y - c.y);
+    drawList.forEach(d => d.fn(camX, camY));
 
-    // Gras vor den Füßen
-    const ftx = Math.floor(G.x / TS), fty = Math.floor(G.y / TS);
-    if (tileAt(ftx, fty) === T.BUSH) {
-      const set = r.tileset[T.BUSH];
-      const img = set[Math.floor(WORLD.mulberry32(ftx * 7919 + fty * 104729)() * set.length)];
-      b.drawImage(img, 0, 8, 16, 8, ftx * TS - camX, fty * TS - camY + 8, 16, 8);
+    function drawPlayerSprite() {
+      const pxs = Math.round(G.x - 8 - camX), pys = Math.round(G.y - 12 - camY);
+      b.fillStyle = 'rgba(0,0,0,.22)';
+      b.beginPath(); b.ellipse(pxs + 8, pys + 15, 5, 2.5, 0, 0, 7); b.fill();
+      SPR.drawTrainer(b, pxs, pys, G.dir, G.moving ? G.step : 0, 1);
+
+      // Gras vor den Füßen
+      const ftx = Math.floor(G.x / TS), fty = Math.floor(G.y / TS);
+      if (tileAt(ftx, fty) === T.BUSH) {
+        const set = r.tileset[T.BUSH];
+        const img = set[Math.floor(tileHash(ftx, fty) * set.length) % set.length];
+        b.drawImage(img, 0, 8, 16, 8, ftx * TS - camX, fty * TS - camY + 8, 16, 8);
+      }
     }
 
     drawWorldHUD(r);
@@ -2520,6 +2759,8 @@
       G.battle = null;
       G.state = 'world';
       G.encounterCooldown = 1.5;
+      // Nach dem Kampf ist rundherum erst mal Ruhe
+      G.mons = G.mons.filter(m => Math.hypot(G.x - m.x, G.y - m.y) > 80);
       if (res === 'lose') blackout();
       else if (res === 'catch' || res === 'win') save();
       return;
