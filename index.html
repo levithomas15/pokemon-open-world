@@ -41,7 +41,7 @@
   body.touch #hint { display: none; }
 
   /* ---------- Touch-Steuerung ---------- */
-  #touch { display: none; }
+  #touch { display: none; touch-action: none; }
   body.touch #touch {
     display: flex; align-items: center; justify-content: space-between;
     width: 100%; flex: 1 1 auto; gap: 10px;
@@ -114,6 +114,7 @@
   /* Vollbild-Knopf: im freien Bereich der Steuerung, nie über dem Spielfeld */
   #btnFull {
     position: fixed; width: 38px; height: 38px; border-radius: 10px; z-index: 20;
+    touch-action: manipulation;
     background: rgba(26,22,38,.72); color: #cfd6f0; border: 1px solid #4a5270;
     font-size: 16px; display: none; align-items: center; justify-content: center;
     bottom: calc(10px + env(safe-area-inset-bottom));
