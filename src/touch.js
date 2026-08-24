@@ -22,6 +22,40 @@
   if (!el.root) return;
   if (!isTouch) { el.root.style.display = 'none'; return; }
 
+  /* ---------- Kein Zoom durch Doppeltippen oder Aufziehen ----------
+     iOS ignoriert "user-scalable=no" im Viewport, darum wird das Zoomen
+     hier zusätzlich abgefangen: zweimal schnell auf A (oder irgendwo
+     sonst) tippen soll spielen und nicht die Seite heranzoomen.
+     Knöpfe, die einen echten Klick brauchen (z. B. Vollbild), bleiben
+     ausgenommen – sonst käme deren click-Ereignis nicht mehr an.        */
+  function blockZoomGestures() {
+    const NEEDS_CLICK = 'button, a, input, select, textarea';
+    const DOUBLE_TAP_MS = 350;
+    let lastTouchEnd = 0;
+
+    document.addEventListener('touchend', e => {
+      const now = Date.now();
+      const keepsClick = e.target && e.target.closest && e.target.closest(NEEDS_CLICK);
+      if (now - lastTouchEnd < DOUBLE_TAP_MS && !keepsClick) e.preventDefault();
+      lastTouchEnd = now;
+    }, { passive: false });
+
+    // Nachzügler: Doppelklick (Maus wie synthetischer Touch-Klick)
+    document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });
+
+    // Safari: Aufziehen mit zwei Fingern
+    ['gesturestart', 'gesturechange', 'gestureend'].forEach(type => {
+      document.addEventListener(type, e => e.preventDefault(), { passive: false });
+    });
+
+    // alle anderen: Pinch-Zoom ist immer ein Zwei-Finger-Wisch
+    document.addEventListener('touchmove', e => {
+      if (e.touches.length > 1) e.preventDefault();
+    }, { passive: false });
+  }
+
+  blockZoomGestures();
+
   const active = { up: false, down: false, left: false, right: false };
 
   function setDir(d, on) {

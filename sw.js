@@ -1,5 +1,5 @@
 /* Service Worker – macht das Spiel offline spielbar (Handy/Tablet/Desktop) */
-const CACHE = 'pkmn-openworld-v1';
+const CACHE = 'pkmn-openworld-v2';
 const ASSETS = [
   './',
   './index.html',
